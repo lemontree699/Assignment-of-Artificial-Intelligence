@@ -27,10 +27,9 @@ torch.manual_seed(random_seed)
 
 train_data = torchvision.datasets.MNIST(
     root='./mnist/',
-    train=True,                                     # this is training data
-    transform=torchvision.transforms.ToTensor(),    # Converts a PIL.Image or numpy.ndarray to
-                                                    # torch.FloatTensor of shape (C x H x W) and normalize in the range [0.0, 1.0]
-    download=donwload_mnist,                        # download it if you don't have it
+    train=True,                           
+    transform=torchvision.transforms.ToTensor(),              
+    download=donwload_mnist,                
 )
 train_load = Data.DataLoader(dataset=train_data, batch_size=batch_size, shuffle=True)
 
@@ -44,10 +43,10 @@ class AutoEncoder(nn.Module):
             nn.Tanh(),
             nn.Linear(128, 64),
             nn.Tanh(),
-            nn.Linear(64, 16),
+            nn.Linear(64, 25),
         )
         self.decoder = nn.Sequential(
-            nn.Linear(16, 64),
+            nn.Linear(25, 64),
             nn.Tanh(),
             nn.Linear(64, 128),
             nn.Tanh(),
@@ -61,14 +60,14 @@ class AutoEncoder(nn.Module):
         return encoded, decoded
 
 autoencoder = AutoEncoder()
-print(autoencoder)
 optimizer = torch.optim.Adam(autoencoder.parameters(), lr=learning_rate)
 loss_func = nn.MSELoss()
 
-# 训练
+# 训练AutoEncoder
 f, a = plt.subplots(2, n_test_img, figsize=(5, 2))
 plt.ion()  
 
+# 选择几张图片进行显示
 view_data = train_data.train_data[:n_test_img].view(-1, 28*28).type(torch.FloatTensor)/255.
 for i in range(n_test_img):
     a[0][i].imshow(np.reshape(view_data.data.numpy()[i], (28, 28)), cmap='gray'); a[0][i].set_xticks(()); a[0][i].set_yticks(())
@@ -117,45 +116,23 @@ test_loader = torch.utils.data.DataLoader(
     batch_size=batch_size_test, shuffle=True)
 
 # 构建网络
-# class Net(nn.Module):
-#     def __init__(self):
-#         super(Net, self).__init__()
-#         self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-#         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-#         self.conv2_drop = nn.Dropout2d()
-#         self.fc1 = nn.Linear(320, 50)
-#         self.fc2 = nn.Linear(50, 10)
-
-#     def forward(self, x):
-#         x = F.relu(F.max_pool2d(self.conv1(x), 2))
-#         x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-#         x = x.view(-1, 320)
-#         x = F.relu(self.fc1(x))
-#         x = F.dropout(x, training=self.training)
-#         x = self.fc2(x)
-#         return F.log_softmax(x)
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.train_conv = nn.Sequential(
-            nn.Conv2d(1,16,kernel_size=3,padding = 2),
-            nn.MaxPool2d(2),
-            nn.ReLU(),
-            nn.Conv2d(16,32,kernel_size=3,padding = 1),
-            nn.ReLU()
-        )
-        self.train_fc = nn.Sequential(
-            nn.Linear(32*3*3, 64),
-            nn.ReLU(),
-            nn.Linear(64,10),
-            nn.LogSoftmax(dim = 1)
-        )
+        self.conv1 = nn.Conv2d(1, 25, kernel_size = 2, padding = 2)
+        self.conv2 = nn.Conv2d(25, 32, kernel_size = 3, padding = 2)
+        self.conv2_drop = nn.Dropout2d()
+        self.fc1 = nn.Linear(288, 50)
+        self.fc2 = nn.Linear(50, 10)
 
     def forward(self, x):
-        x = self.train_conv(x)
-        x = x.view(-1,288)
-        x = self.train_fc(x)
-        return x
+        x = F.relu(F.max_pool2d(self.conv1(x), 2))
+        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
+        x = x.view(-1, 288)
+        x = F.relu(self.fc1(x))
+        x = F.dropout(x, training=self.training)
+        x = self.fc2(x)
+        return F.log_softmax(x, dim = 1)
 
 net = Net()
 optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
@@ -171,10 +148,10 @@ test_counter = [i*len(train_loader.dataset) for i in range(epochs + 1)]
 def train(epoch):
     net.train()
     for batch_idx, (data, target) in enumerate(train_loader):
-        (data, _), target = autoencoder(Variable(data.view(-1, 28*28))), Variable(target)
-        t = data.view(-1,1,4,4)
+        (data, _)= autoencoder(Variable(data.view(-1, 28*28)))
+        target = Variable(target)
         optimizer.zero_grad()
-        output = net(t)
+        output = net(data.view(-1,1,5,5))
         loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
@@ -187,14 +164,14 @@ def test():
     net.eval()
     test_loss = 0
     correct = 0
-    # with torch.no_grad():
-    for data, target in test_loader:
-        (data, _), target = autoencoder(Variable(data.view(-1, 28*28))), Variable(target)
-        t = data.view(-1,1,4,4)
-        output = net(t)
-        test_loss += F.nll_loss(output, target, size_average=False).item()
-        pred = output.data.max(1, keepdim=True)[1]
-        correct += pred.eq(target.data.view_as(pred)).sum()
+    with torch.no_grad():
+        for data, target in test_loader:
+            (data, _)= autoencoder(Variable(data.view(-1, 28*28)))
+            target = Variable(target)
+            output = net(data.view(-1,1,5,5))
+            test_loss += F.nll_loss(output, target, size_average=False).item()
+            pred = output.data.max(1, keepdim=True)[1]
+            correct += pred.eq(target.data.view_as(pred)).sum()
     test_loss /= len(test_loader.dataset)
     test_losses.append(test_loss)
     print('\nloss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
